@@ -205,6 +205,9 @@ The alpha value remains unchanged from the previous pixel.
 #include <cstring>
 
 #include <string_view>
+#include <algorithm>
+#include <vector>
+
 
 namespace qoi
 {
@@ -258,13 +261,13 @@ constexpr unsigned int QOI_MAGIC = []() -> unsigned int {
 	ui('i') <<  8 |
 	ui('f');
 }();
-constexpr size_t QOI_HEADER_SIZE = 14;
+	constexpr size_t QOI_HEADER_SIZE = 14;
 
 	/* 2GB is the max file size that this implementation can safely handle. We guard
 	against anything larger than that, assuming the worst case with 5 bytes per
 	pixel, rounded down to a nice clean value. 400 million pixels ought to be
 	enough for anybody. */
-constexpr unsigned int QOI_PIXELS_MAX = 400000000;
+	constexpr unsigned int QOI_PIXELS_MAX = 400000000;
 
 	union qoi_rgba_t {
 		struct { unsigned char r, g, b, a; } rgba;
@@ -273,19 +276,35 @@ constexpr unsigned int QOI_PIXELS_MAX = 400000000;
 
 	constexpr unsigned char qoi_padding[8] = {0,0,0,0,0,0,0,1};
 
-	constexpr void qoi_write_32(unsigned char *bytes, int *p, unsigned int v) {
-		bytes[(*p)++] = (0xff000000 & v) >> 24;
-		bytes[(*p)++] = (0x00ff0000 & v) >> 16;
-		bytes[(*p)++] = (0x0000ff00 & v) >> 8;
-		bytes[(*p)++] = (0x000000ff & v);
+	template<typename T>
+	concept ConstByteBuffer = requires(T& t)
+	{
+		{ t[0] } -> std::convertible_to<uint8_t>;
+	};
+	template<typename T>
+	concept ByteBuffer = ConstByteBuffer<T> && requires(T& t)
+	{
+		{ t[0] = 0 } -> std::convertible_to<uint8_t>;
+	};
+
+	constexpr void qoi_write_32(ByteBuffer auto& bytes, size_t& p, const unsigned int v) {
+		bytes[p++] = (0xff000000 & v) >> 24;
+		bytes[p++] = (0x00ff0000 & v) >> 16;
+		bytes[p++] = (0x0000ff00 & v) >> 8;
+		bytes[p++] = (0x000000ff & v);
 	}
 
-	constexpr unsigned int qoi_read_32(const unsigned char *bytes, int *p) {
-		const unsigned int a = bytes[(*p)++];
-		const unsigned int b = bytes[(*p)++];
-		const unsigned int c = bytes[(*p)++];
-		const unsigned int d = bytes[(*p)++];
+	constexpr uint8_t qoi_read_32(const ConstByteBuffer auto& bytes, size_t& p) {
+		const uint8_t a = bytes[p++];
+		const uint8_t b = bytes[p++];
+		const uint8_t d = bytes[p++];
+		const uint8_t c = bytes[p++];
 		return a << 24 | b << 16 | c << 8 | d;
+	}
+
+	[[deprecated("for backwards compat until change")]]
+	constexpr uint8_t qoi_read_32(const ConstByteBuffer auto& bytes, auto* p) {
+		return qoi_read_32(bytes, static_cast<size_t&>(*p));
 	}
 
 	/* Encode raw RGB or RGBA pixels into a QOI image in memory.
@@ -295,42 +314,37 @@ constexpr unsigned int QOI_PIXELS_MAX = 400000000;
 		is set to the size in bytes of the encoded data.
 
 		The returned qoi data should be free()d after use. */
-	constexpr void *qoi_encode(const void *data, const qoi_desc *desc, int *out_len) {
-		int p;
+	constexpr std::vector<uint8_t> qoi_encode(const void *data, const qoi_desc *desc) {
 		qoi_rgba_t index[64];
 		qoi_rgba_t px_prev{};
 
 		if (
-			data == nullptr || out_len == nullptr || desc == nullptr ||
+			data == nullptr || desc == nullptr ||
 			desc->width == 0 || desc->height == 0 ||
 			desc->channels < 3 || desc->channels > 4 ||
 			desc->colorspace > 1 ||
 			desc->height >= QOI_PIXELS_MAX / desc->width
 		) {
-			return nullptr;
+			return {};
 		}
 
 		const size_t max_size = desc->width * desc->height * (desc->channels + 1) +
 		               QOI_HEADER_SIZE + sizeof(qoi_padding);
 
-		p = 0;
-		auto *bytes = static_cast<unsigned char *>(QOI_MALLOC(max_size));
-		if (!bytes) {
-			return nullptr;
-		}
+		size_t p = 0;
+		std::vector<uint8_t> result {};
+		result.resize(max_size);
 
-		qoi_write_32(bytes, &p, QOI_MAGIC);
-		qoi_write_32(bytes, &p, desc->width);
-		qoi_write_32(bytes, &p, desc->height);
-		bytes[p++] = desc->channels;
-		bytes[p++] = desc->colorspace;
-
+		qoi_write_32(result, p, QOI_MAGIC);
+		qoi_write_32(result, p, desc->width);
+		qoi_write_32(result, p, desc->height);
+		result[p++] = desc->channels;
+		result[p++] = desc->colorspace;
 
 		const auto *pixels = static_cast<const unsigned char *>(data);
 
 		QOI_ZEROARR(index);
-
-		int run = 0;
+		uint8_t run = 0;
 		px_prev.rgba.r = 0;
 		px_prev.rgba.g = 0;
 		px_prev.rgba.b = 0;
@@ -339,7 +353,7 @@ constexpr unsigned int QOI_PIXELS_MAX = 400000000;
 
 		const unsigned int px_len = desc->width * desc->height * desc->channels;
 		const unsigned int px_end = px_len - desc->channels;
-		const int channels = desc->channels;
+		const unsigned int channels = desc->channels;
 
 		for (size_t px_pos = 0; px_pos < px_len; px_pos += channels) {
 			px.rgba.r = pixels[px_pos + 0];
@@ -353,22 +367,20 @@ constexpr unsigned int QOI_PIXELS_MAX = 400000000;
 			if (px.v == px_prev.v) {
 				run++;
 				if (run == 62 || px_pos == px_end) {
-					bytes[p++] = QOI_OP_RUN | (run - 1);
+					result[p++] = QOI_OP_RUN | (run - 1);
 					run = 0;
 				}
 			}
 			else {
-				int index_pos;
-
 				if (run > 0) {
-					bytes[p++] = QOI_OP_RUN | (run - 1);
+					result[p++] = QOI_OP_RUN | (run - 1);
 					run = 0;
 				}
 
-				index_pos = QOI_COLOR_HASH(px) & (64 - 1);
+				const int index_pos = QOI_COLOR_HASH(px) & (64 - 1);
 
 				if (index[index_pos].v == px.v) {
-					bytes[p++] = QOI_OP_INDEX | index_pos;
+					result[p++] = QOI_OP_INDEX | index_pos;
 				}
 				else {
 					index[index_pos] = px;
@@ -386,29 +398,29 @@ constexpr unsigned int QOI_PIXELS_MAX = 400000000;
 							vg > -3 && vg < 2 &&
 							vb > -3 && vb < 2
 						) {
-							bytes[p++] = QOI_OP_DIFF | (vr + 2) << 4 | (vg + 2) << 2 | (vb + 2);
+							result[p++] = QOI_OP_DIFF | (vr + 2) << 4 | (vg + 2) << 2 | (vb + 2);
 						}
 						else if (
 							vg_r >  -9 && vg_r <  8 &&
 							vg   > -33 && vg   < 32 &&
 							vg_b >  -9 && vg_b <  8
 						) {
-							bytes[p++] = QOI_OP_LUMA     | (vg   + 32);
-							bytes[p++] = (vg_r + 8) << 4 | (vg_b +  8);
+							result[p++] = QOI_OP_LUMA     | (vg   + 32);
+							result[p++] = (vg_r + 8) << 4 | (vg_b +  8);
 						}
 						else {
-							bytes[p++] = QOI_OP_RGB;
-							bytes[p++] = px.rgba.r;
-							bytes[p++] = px.rgba.g;
-							bytes[p++] = px.rgba.b;
+							result[p++] = QOI_OP_RGB;
+							result[p++] = px.rgba.r;
+							result[p++] = px.rgba.g;
+							result[p++] = px.rgba.b;
 						}
 					}
 					else {
-						bytes[p++] = QOI_OP_RGBA;
-						bytes[p++] = px.rgba.r;
-						bytes[p++] = px.rgba.g;
-						bytes[p++] = px.rgba.b;
-						bytes[p++] = px.rgba.a;
+						result[p++] = QOI_OP_RGBA;
+						result[p++] = px.rgba.r;
+						result[p++] = px.rgba.g;
+						result[p++] = px.rgba.b;
+						result[p++] = px.rgba.a;
 					}
 				}
 			}
@@ -416,11 +428,14 @@ constexpr unsigned int QOI_PIXELS_MAX = 400000000;
 		}
 
 		for (const unsigned char i: qoi_padding) {
-			bytes[p++] = i;
+			result[p++] = i;
 		}
 
-		*out_len = p;
-		return bytes;
+		// if consteval {
+		// 	static_assert(p == result.size());
+		// }
+
+		return result;
 	}
 
 	/* Decode a QOI image from memory.
@@ -430,10 +445,11 @@ constexpr unsigned int QOI_PIXELS_MAX = 400000000;
 	is filled with the description from the file header.
 
 	The returned pixel data should be free()d after use. */
-	constexpr void *qoi_decode(const void *data, const size_t size, qoi_desc *desc, int channels) {
+	constexpr /*std::vector<uint8_t>*/ void* qoi_decode(const void *data, const size_t size, qoi_desc *desc, int channels) {
 		qoi_rgba_t index[64];
 		qoi_rgba_t px{};
-		int p = 0, run = 0;
+		size_t p = 0;
+		int run = 0;
 
 		if (
 			data == nullptr || desc == nullptr ||
@@ -541,14 +557,13 @@ constexpr unsigned int QOI_PIXELS_MAX = 400000000;
 	failed) or the number of bytes written on success. */
 	inline int qoi_write(const char *filename, const void *data, const qoi_desc *desc) {
 		FILE *f = fopen(filename, "wb");
-		int size, err;
-		void *encoded;
+		int size;
 
 		if (!f) {
 			return 0;
 		}
 
-		encoded = qoi_encode(data, desc, &size);
+		void *encoded = qoi_encode(data, desc, &size);
 		if (!encoded) {
 			fclose(f);
 			return 0;
@@ -556,7 +571,7 @@ constexpr unsigned int QOI_PIXELS_MAX = 400000000;
 
 		fwrite(encoded, 1, size, f);
 		fflush(f);
-		err = ferror(f);
+		const int err = ferror(f);
 		fclose(f);
 
 		QOI_FREE(encoded);
@@ -572,31 +587,29 @@ constexpr unsigned int QOI_PIXELS_MAX = 400000000;
 	will be filled with the description from the file header.
 
 	The returned pixel data should be free()d after use. */
-	void *qoi_read(const char *filename, qoi_desc *desc, int channels) {
+	inline void *qoi_read(const char *filename, qoi_desc *desc, int channels) {
 		FILE *f = fopen(filename, "rb");
-		int size, bytes_read;
-		void *pixels, *data;
 
 		if (!f) {
-			return NULL;
+			return nullptr;
 		}
 
 		fseek(f, 0, SEEK_END);
-		size = ftell(f);
+		const int size = ftell(f);
 		if (size <= 0 || fseek(f, 0, SEEK_SET) != 0) {
 			fclose(f);
-			return NULL;
+			return nullptr;
 		}
 
-		data = QOI_MALLOC(size);
+		void *data = QOI_MALLOC(size);
 		if (!data) {
 			fclose(f);
-			return NULL;
+			return nullptr;
 		}
 
-		bytes_read = fread(data, 1, size, f);
+		int bytes_read = fread(data, 1, size, f);
 		fclose(f);
-		pixels = (bytes_read != size) ? NULL : qoi_decode(data, bytes_read, desc, channels);
+		void *pixels = (bytes_read != size) ? nullptr : qoi_decode(data, bytes_read, desc, channels);
 		QOI_FREE(data);
 		return pixels;
 	}
