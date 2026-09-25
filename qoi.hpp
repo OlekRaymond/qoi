@@ -1,55 +1,73 @@
 #pragma once
 #include <cstdint>
-    #include <cstdlib>
-    #include <cstring>
-    #include <string_view>
-    #include <vector>
-    #include <array>
-    #include <bit>
-    #include <algorithm>
+#include <cstdlib>
+#include <cstring>
+#include <string_view>
+#include <vector>
+#include <array>
+#include <bit>
+#include <algorithm>
+#include <version>
 
-// TODO: Some form of malloc indirection
+#ifndef QOI_HAS_EXCEPTIONS
+// Standard
+#   if defined(__cpp_exceptions) && __cpp_exceptions
+#       define QOI_HAS_EXCEPTIONS 1
+// gcc
+#   elif defined(__EXCEPTIONS) && __EXCEPTIONS
+#       define QOI_HAS_EXCEPTIONS 1
+// msvc
+#   elif defined(_HAS_EXCEPTIONS) && _HAS_EXCEPTIONS
+#       define QOI_HAS_EXCEPTIONS 1
+// unknown or doesn't
+#   else
+#       define QOI_HAS_EXCEPTIONS 0
+#   endif
+#endif
 
-    #define QOI_CPP_STD_EXCEPTIONS (defined(__cpp_exceptions) && __cpp_exceptions)
-    #define QOI_GCC_EXCEPTIONS (defined(__EXCEPTIONS) && __EXCEPTIONS)
-    #define QOI_MSVC_EXCEPTIONS (defined(_HAS_EXCEPTIONS) && _HAS_EXCEPTIONS)
+#if QOI_HAS_EXCEPTIONS
+#   define QOI_IF_HAS_EXCEPTIONS(...) __VA_ARGS__
+#   include <stdexcept>
+#else
+#   define QOI_IF_HAS_EXCEPTIONS(...)
+#endif
 
-    #if !defined(QOI_HAS_EXCEPTIONS) && (QOI_CPP_STD_EXCEPTIONS || QOI_GCC_EXCEPTIONS || QOI_MSVC_EXCEPTIONS )
-    #define QOI_HAS_EXCEPTIONS 1
-    #define QOI_IF_HAS_EXCEPTIONS(...) __VA_ARGS__
-    #include <stdexcept>
-    #else
-    #define QOI_HAS_EXCEPTIONS 0
-    #define QOI_IF_HAS_EXCEPTIONS(...)
-    #endif
+#ifndef QOI_HAS_EXPECTED
+#   if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202202L
+#       define QOI_HAS_EXPECTED 1
+#   else
+#       define QOI_HAS_EXPECTED 0
+#   endif
+#endif
 
-    #include <version>
+#if QOI_HAS_EXPECTED
+#   define QOI_IF_HAS_EXPECTED(...) __VA_ARGS__
+#   include <expected>
+#else
+#   define QOI_IF_HAS_EXPECTED(...)
+#endif
 
-    #if !defined(QOI_HAS_EXPECTED) && defined(__cpp_lib_expected) && __cpp_lib_expected >= 202202L
-    #define QOI_HAS_EXPECTED 1
-    #define QOI_IF_HAS_EXPECTED(...) __VA_ARGS__
-    #include <expected>
-    #else
-    #define QOI_HAS_EXPECTED 0
-    #define QOI_IF_HAS_EXPECTED(...)
-    #endif
 
-    #if !defined(QOI_HAS_OPTIONAL)
-    #if __cpp_lib_optional >= 201606L
-    #define QOI_HAS_OPTIONAL 1
+#if !defined(QOI_HAS_OPTIONAL)
+#   if __cpp_lib_optional >= 201606L
+#       define QOI_HAS_OPTIONAL 1
+#   else
+#       define QOI_HAS_OPTIONAL 0
+#   endif
+#endif
+
+#if QOI_HAS_OPTIONAL
     #define QOI_IF_HAS_OPTIONAL(...) __VA_ARGS__
     #include <optional>
-    #else
-    #define QOI_IF_HAS_OPTIONAL(...)
-    #define QOI_HAS_OPTIONAL 0
-    #endif
-    #endif
+#else
+#   define QOI_IF_HAS_OPTIONAL(...)
+#endif
 
-    #if defined(QOI_CUSTOM_TYPE)
-    #define QOI_IF_CUSTOM_TYPE(...) __VA_ARGS__
-    #else
-    #define QOI_IF_CUSTOM_TYPE(...)
-    #endif
+#if defined(QOI_CUSTOM_TYPE)
+#   define QOI_IF_CUSTOM_TYPE(...) __VA_ARGS__
+#else
+#   define QOI_IF_CUSTOM_TYPE(...)
+#endif
 
     namespace qoi
     {
@@ -139,11 +157,6 @@
             return b0 << 24 | b1 << 16 | b2 << 8 | b3;
         }
 
-        [[deprecated("for backwards compat until change")]]
-        constexpr uint8_t qoi_read_32(const ConstByteBuffer auto& bytes, auto* p) {
-            return qoi_read_32(bytes, static_cast<size_t&>(*p));
-        }
-
     enum struct ErrorHandling {
         QOI_IF_HAS_EXCEPTIONS(Exceptions,)
         QOI_IF_HAS_EXPECTED(Expected,)
@@ -152,10 +165,10 @@
         TreatAsMonadic // e.g. returning a 0 length vector
     };
 
+QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
+
     template<ErrorHandling errorHandling_t>
     class Qoi {
-        QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
-
         template<typename Type, bool error_t = false>
         static constexpr auto MakeResultType(auto... args) {
             if constexpr (errorHandling_t == ErrorHandling::TreatAsMonadic) {
@@ -182,34 +195,41 @@
         template<typename T>
         using Result_t = decltype(MakeResultType<T, false>());
     public:
-        constexpr static Result_t<std::vector<uint8_t>> encode(const void *data, const qoi_desc *desc) {
-            using T = std::vector<uint8_t>;
+        /* Encode raw RGB or RGBA pixels into a QOI image in memory.
+           - Error handling is dependent on class template parameter
+           - If custom allocation is required user can provide any vector type
+        */
+        template<typename VectorType = std::vector<uint8_t>>
+        constexpr static Result_t<VectorType> encode(const void *data, const qoi_desc& desc) {
+            constexpr auto MakeError = [](auto sv) {
+                return MakeResultType<VectorType, true>(sv);
+            };
 
             std::array<qoi_rgba_t, 64> index{};
             qoi_rgba_t px_prev{};
 
             if (
-                data == nullptr || desc == nullptr ||
-                desc->width == 0 || desc->height == 0 ||
-                desc->channels < 3 || desc->channels > 4 ||
-                desc->colorspace > 1 ||
-                desc->height >= QOI_PIXELS_MAX / desc->width
+                data == nullptr ||
+                desc.width == 0 || desc.height == 0 ||
+                desc.channels < 3 || desc.channels > 4 ||
+                desc.colorspace > 1 ||
+                desc.height >= QOI_PIXELS_MAX / desc.width
             ) {
-                return MakeResultType<T, true>("Invalid input, qoi has 3|4 channels and a resonable amount of pixesls");
+                return MakeError("Invalid input, qoi has 3|4 channels and a resonable amount of pixesls");
             }
 
-            const size_t max_size = desc->width * desc->height * (desc->channels + 1) +
+            const size_t max_size = desc.width * desc.height * (desc.channels + 1) +
                         QOI_HEADER_SIZE + sizeof(qoi_padding);
 
             size_t p = 0;
-            std::vector<uint8_t> result {};
+            VectorType result {};
             result.resize(max_size);
 
             qoi_write_32(result, p, QOI_MAGIC);
-            qoi_write_32(result, p, desc->width);
-            qoi_write_32(result, p, desc->height);
-            result[p++] = desc->channels;
-            result[p++] = desc->colorspace;
+            qoi_write_32(result, p, desc.width);
+            qoi_write_32(result, p, desc.height);
+            result[p++] = desc.channels;
+            result[p++] = desc.colorspace;
 
             const auto *pixels = static_cast<const unsigned char *>(data);
 
@@ -220,9 +240,9 @@
             px_prev.a = 255;
             qoi_rgba_t px = px_prev;
 
-            const unsigned int px_len = desc->width * desc->height * desc->channels;
-            const unsigned int px_end = px_len - desc->channels;
-            const unsigned int channels = desc->channels;
+            const unsigned int px_len = desc.width * desc.height * desc.channels;
+            const unsigned int px_end = px_len - desc.channels;
+            const unsigned int channels = desc.channels;
 
             for (size_t px_pos = 0; px_pos < px_len; px_pos += channels) {
                 px.r = pixels[px_pos + 0];
@@ -302,26 +322,14 @@
 
             return result;
         }
-        /* Encode raw RGB or RGBA pixels into a QOI image in memory.
-
-            The function either returns NULL on failure (invalid parameters or malloc
-            failed) or a pointer to the encoded data on success. On success the out_len
-            is set to the size in bytes of the encoded data.
-
-            The returned qoi data should be free()d after use. */
-
 
         /* Decode a QOI image from memory.
-
-        The function either returns NULL on failure (invalid parameters or malloc
-        failed) or a pointer to the decoded pixels. On success, the qoi_desc struct
-        is filled with the description from the file header.
-
-        The returned pixel data should be free()d after use. */
-        static constexpr Result_t<std::vector<uint8_t>> qoi_decode(const void *data, const size_t size, qoi_desc *desc, int channels) {
-            using ResultValue = std::vector<uint8_t>;
+            qoi_desc struct is filled with the description from the file header.
+        */
+        template<typename VectorType = std::vector<uint8_t>>
+        static constexpr Result_t<VectorType> qoi_decode(const void *data, const size_t size, qoi_desc& desc, int channels) {
             constexpr auto MakeError = [](auto sv) {
-                return MakeResultType<ResultValue, true>(sv);
+                return MakeResultType<VectorType, true>(sv);
             };
             using namespace std::string_view_literals;
             std::array<qoi_rgba_t, 64> index{};
@@ -329,7 +337,7 @@
             size_t p = 0;
             int run = 0;
 
-            if (data == nullptr || desc == nullptr)
+            if (data == nullptr)
             {
                 return MakeError("input data was null"sv);
             }
@@ -344,30 +352,30 @@
             const auto *bytes = static_cast<const unsigned char *>(data);
 
             const uint32_t header_magic = qoi_read_32(bytes, p);
-            desc->width = qoi_read_32(bytes, p);
-            desc->height = qoi_read_32(bytes, p);
-            desc->channels = bytes[p++];
-            desc->colorspace = bytes[p++];
+            desc.width = qoi_read_32(bytes, p);
+            desc.height = qoi_read_32(bytes, p);
+            desc.channels = bytes[p++];
+            desc.colorspace = bytes[p++];
 
-            if (desc->width == 0 || desc->height == 0)
+            if (desc.width == 0 || desc.height == 0)
             {
                 return MakeError("Input data contained zero sized axis"sv);
             }
 
             if (
-                desc->channels < 3 || desc->channels > 4 ||
-                desc->colorspace > 1 ||
+                desc.channels < 3 || desc.channels > 4 ||
+                desc.colorspace > 1 ||
                 header_magic != QOI_MAGIC ||
-                desc->height >= QOI_PIXELS_MAX / desc->width
+                desc.height >= QOI_PIXELS_MAX / desc.width
             ) {
                 return MakeError("Header data was not valid, size must be positive"sv);
             }
 
             if (channels == 0) {
-                channels = desc->channels;
+                channels = desc.channels;
             }
 
-            const size_t px_len = desc->width * desc->height * channels;
+            const size_t px_len = desc.width * desc.height * channels;
             std::vector<unsigned char> pixels{};
             pixels.resize(px_len);
 
@@ -435,7 +443,7 @@
     {
         std::vector<uint8_t> example_data{0,1,2,3,4,5,5,6,7,7,8,8,9};
         qoi_desc desc{};
-        return qoi::Qoi<eh>::encode(example_data.data(), &desc);
+        return qoi::Qoi<eh>::encode(example_data.data(), desc);
     }
     static_assert(InvalidEncode<ErrorHandling::TreatAsMonadic>().empty());
     static_assert(!InvalidEncode<ErrorHandling::Optional>().has_value());
@@ -451,7 +459,7 @@
             .channels=3,
             .colorspace=0
         };
-        return qoi::Qoi<eh>::encode(example_data.data(), &desc);
+        return qoi::Qoi<eh>::encode(example_data.data(), desc);
     }
     static_assert(!ValidEncode<ErrorHandling::TreatAsMonadic>().empty());
     static_assert(ValidEncode<ErrorHandling::Optional>().has_value());
@@ -539,12 +547,12 @@
             .channels=3,
             .colorspace=0
         };
-        auto encoded = Q::encode(example_data.data(), &desc);
+        auto encoded = Q::encode(example_data.data(), desc);
         if (!encoded.has_value()) {
             return 1;
         }
         qoi::qoi_desc desc_out{};
-        const auto decoded = Q::qoi_decode((*encoded).data(), (*encoded).size(), &desc_out, 3);
+        const auto decoded = Q::qoi_decode((*encoded).data(), (*encoded).size(), desc_out, 3);
         if (!decoded.has_value())
         {
             return 2;
@@ -567,14 +575,13 @@
             .channels=3,
             .colorspace=0
         };
-        auto encoded = Q::encode(example_data.data(), &desc);
+        auto encoded = Q::encode(example_data.data(), desc);
         if (!encoded.has_value()) {
             std::cout << "encode did not create valid value: " << encoded.error() << "\n";
         }
         std::cout << "Encoded size: " << (*encoded).size() << "\n";
-        uint8_t* in = (*encoded).data();
         qoi::qoi_desc desc_out{};
-        const auto decoded = Q::qoi_decode((*encoded).data(), (*encoded).size(), &desc_out, 3);
+        const auto decoded = Q::qoi_decode((*encoded).data(), (*encoded).size(), desc_out, 3);
         if (!decoded.has_value())
         {
             std::cout << "Decode was unsuccessful: " << decoded.error() << "\n";
@@ -592,7 +599,4 @@
         Both({0,1,2,3,4,5,5,6,7,7,8,8});
         Both({128,128,128,3,4,5,5,6,7,7,8,8});
         Both({128,128,128,255,255,255,5,6,7,7,8,8});
-
-
-
     }
