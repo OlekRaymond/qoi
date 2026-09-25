@@ -7,6 +7,7 @@
 #include <array>
 #include <bit>
 #include <algorithm>
+#include <span>
 #include <version>
 
 #ifndef QOI_HAS_EXCEPTIONS
@@ -200,7 +201,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
            - If custom allocation is required user can provide any vector type
         */
         template<typename VectorType = std::vector<uint8_t>>
-        constexpr static Result_t<VectorType> encode(const void *data, const qoi_desc& desc) {
+        constexpr static Result_t<VectorType> encode(const std::span<const uint8_t> data, const qoi_desc& desc) {
             constexpr auto MakeError = [](auto sv) {
                 return MakeResultType<VectorType, true>(sv);
             };
@@ -209,7 +210,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
             qoi_rgba_t px_prev{};
 
             if (
-                data == nullptr ||
+                data.size() <= 1 ||
                 desc.width == 0 || desc.height == 0 ||
                 desc.channels < 3 || desc.channels > 4 ||
                 desc.colorspace > 1 ||
@@ -231,7 +232,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
             result[p++] = desc.channels;
             result[p++] = desc.colorspace;
 
-            const auto *pixels = static_cast<const unsigned char *>(data);
+            const auto& pixels = data;
 
             uint8_t run = 0;
             px_prev.r = 0;
@@ -327,7 +328,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
             qoi_desc struct is filled with the description from the file header.
         */
         template<typename VectorType = std::vector<uint8_t>>
-        static constexpr Result_t<VectorType> qoi_decode(const void *data, const size_t size, qoi_desc& desc, int channels) {
+        static constexpr Result_t<VectorType> decode(const void *data, const size_t size, qoi_desc& desc, int channels) {
             constexpr auto MakeError = [](auto sv) {
                 return MakeResultType<VectorType, true>(sv);
             };
@@ -443,7 +444,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
     {
         std::vector<uint8_t> example_data{0,1,2,3,4,5,5,6,7,7,8,8,9};
         qoi_desc desc{};
-        return qoi::Qoi<eh>::encode(example_data.data(), desc);
+        return qoi::Qoi<eh>::encode(example_data, desc);
     }
     static_assert(InvalidEncode<ErrorHandling::TreatAsMonadic>().empty());
     static_assert(!InvalidEncode<ErrorHandling::Optional>().has_value());
@@ -459,7 +460,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
             .channels=3,
             .colorspace=0
         };
-        return qoi::Qoi<eh>::encode(example_data.data(), desc);
+        return qoi::Qoi<eh>::encode(example_data, desc);
     }
     static_assert(!ValidEncode<ErrorHandling::TreatAsMonadic>().empty());
     static_assert(ValidEncode<ErrorHandling::Optional>().has_value());
@@ -547,12 +548,12 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
             .channels=3,
             .colorspace=0
         };
-        auto encoded = Q::encode(example_data.data(), desc);
+        auto encoded = Q::encode(example_data, desc);
         if (!encoded.has_value()) {
             return 1;
         }
         qoi::qoi_desc desc_out{};
-        const auto decoded = Q::qoi_decode((*encoded).data(), (*encoded).size(), desc_out, 3);
+        const auto decoded = Q::decode((*encoded).data(), (*encoded).size(), desc_out, 3);
         if (!decoded.has_value())
         {
             return 2;
@@ -575,13 +576,13 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
             .channels=3,
             .colorspace=0
         };
-        auto encoded = Q::encode(example_data.data(), desc);
+        auto encoded = Q::encode(example_data, desc);
         if (!encoded.has_value()) {
             std::cout << "encode did not create valid value: " << encoded.error() << "\n";
         }
         std::cout << "Encoded size: " << (*encoded).size() << "\n";
         qoi::qoi_desc desc_out{};
-        const auto decoded = Q::qoi_decode((*encoded).data(), (*encoded).size(), desc_out, 3);
+        const auto decoded = Q::decode((*encoded).data(), (*encoded).size(), desc_out, 3);
         if (!decoded.has_value())
         {
             std::cout << "Decode was unsuccessful: " << decoded.error() << "\n";
