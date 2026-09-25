@@ -328,7 +328,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
             qoi_desc struct is filled with the description from the file header.
         */
         template<typename VectorType = std::vector<uint8_t>>
-        static constexpr Result_t<VectorType> decode(const void *data, const size_t size, qoi_desc& desc, int channels) {
+        static constexpr Result_t<VectorType> decode(std::span<const uint8_t> data, qoi_desc& desc, int channels) {
             constexpr auto MakeError = [](auto sv) {
                 return MakeResultType<VectorType, true>(sv);
             };
@@ -338,19 +338,14 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
             size_t p = 0;
             int run = 0;
 
-            if (data == nullptr)
-            {
-                return MakeError("input data was null"sv);
-            }
-
             if (
                 (channels != 0 && channels != 3 && channels != 4) ||
-                size < QOI_HEADER_SIZE + static_cast<int>(sizeof(qoi_padding))
+                data.size() < QOI_HEADER_SIZE + static_cast<int>(sizeof(qoi_padding))
             ) {
                 return MakeError("Input data was not valid, must have positive size"sv);
             }
 
-            const auto *bytes = static_cast<const unsigned char *>(data);
+            const auto& bytes = data;
 
             const uint32_t header_magic = qoi_read_32(bytes, p);
             desc.width = qoi_read_32(bytes, p);
@@ -377,7 +372,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
             }
 
             const size_t px_len = desc.width * desc.height * channels;
-            std::vector<unsigned char> pixels{};
+            VectorType pixels{};
             pixels.resize(px_len);
 
             px.r = 0;
@@ -385,7 +380,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
             px.b = 0;
             px.a = 255;
 
-            const size_t chunks_len = size - sizeof(qoi_padding);
+            const size_t chunks_len = bytes.size() - sizeof(qoi_padding);
             for (size_t px_pos = 0; px_pos < px_len; px_pos += channels) {
                 if (run > 0) {
                     run--;
@@ -553,7 +548,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
             return 1;
         }
         qoi::qoi_desc desc_out{};
-        const auto decoded = Q::decode((*encoded).data(), (*encoded).size(), desc_out, 3);
+        const auto decoded = Q::decode(*encoded, desc_out, 3);
         if (!decoded.has_value())
         {
             return 2;
@@ -582,7 +577,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
         }
         std::cout << "Encoded size: " << (*encoded).size() << "\n";
         qoi::qoi_desc desc_out{};
-        const auto decoded = Q::decode((*encoded).data(), (*encoded).size(), desc_out, 3);
+        const auto decoded = Q::decode(*encoded, desc_out, 3);
         if (!decoded.has_value())
         {
             std::cout << "Decode was unsuccessful: " << decoded.error() << "\n";
