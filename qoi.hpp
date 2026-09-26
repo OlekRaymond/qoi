@@ -20,7 +20,7 @@
 // msvc
 #   elif defined(_HAS_EXCEPTIONS) && _HAS_EXCEPTIONS
 #       define QOI_HAS_EXCEPTIONS 1
-// unknown or doesn't
+// unknown or doesn't have any
 #   else
 #       define QOI_HAS_EXCEPTIONS 0
 #   endif
@@ -72,7 +72,7 @@
 
     namespace qoi
     {
-        /* A pointer to a qoi_desc struct has to be supplied to all of qoi's functions.
+        /* A qoi_desc struct has to be supplied to all of qoi's functions.
     It describes either the input format (for qoi_write and qoi_encode), or is
     filled with the description read from the file header (for qoi_read and
     qoi_decode).
@@ -126,7 +126,7 @@
             constexpr auto operator<=>(const qoi_rgba_t&) const noexcept = default;
         };
 
-        constexpr uint32_t QOI_COLOR_HASH(const qoi_rgba_t& color) {
+        constexpr int64_t QOI_COLOR_HASH(const qoi_rgba_t& color) {
             return color.r * 3 + color.g * 5 + color.b * 7 + color.a * 11;
         }
 
@@ -328,7 +328,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
             qoi_desc struct is filled with the description from the file header.
         */
         template<typename VectorType = std::vector<uint8_t>>
-        static constexpr Result_t<VectorType> decode(std::span<const uint8_t> data, qoi_desc& desc, int channels) {
+        static constexpr Result_t<VectorType> decode(std::span<const uint8_t> data, qoi_desc& desc, uint8_t channels) {
             constexpr auto MakeError = [](auto sv) {
                 return MakeResultType<VectorType, true>(sv);
             };
@@ -386,7 +386,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
                     run--;
                 }
                 else if (p < chunks_len) {
-                    const int b1 = bytes[p++];
+                    const size_t b1 = bytes[p++];
 
                     if (b1 == QOI_OP_RGB) {
                         px.r = bytes[p++];
