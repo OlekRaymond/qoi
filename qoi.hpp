@@ -590,7 +590,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
 
     int main()
     {
-        #define Both( ... ) RuntimeTest( __VA_ARGS__ ); static_assert(ConstexprTest( __VA_ARGS__ ) == 0);
+        #define Both( ... ) RuntimeTest( __VA_ARGS__ ); static_assert(ConstexprTest( __VA_ARGS__ ) == 0)
 
         Both({0,1,2,3,4,5,5,6,7,7,8,8});
         Both({128,128,128,3,4,5,5,6,7,7,8,8});
