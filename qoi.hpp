@@ -328,7 +328,8 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
             qoi_desc struct is filled with the description from the file header.
         */
         template<typename VectorType = std::vector<uint8_t>>
-        static constexpr Result_t<VectorType> decode(std::span<const uint8_t> data, qoi_desc& desc, uint8_t channels) {
+        static constexpr std::tuple<Result_t<VectorType>, qoi_desc> decode(std::span<const uint8_t> data, uint8_t channels) {
+            qoi_desc desc{};
             constexpr auto MakeError = [](auto sv) {
                 return MakeResultType<VectorType, true>(sv);
             };
@@ -342,7 +343,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
                 (channels != 0 && channels != 3 && channels != 4) ||
                 data.size() < QOI_HEADER_SIZE + static_cast<int>(sizeof(qoi_padding))
             ) {
-                return MakeError("Input data was not valid, must have positive size"sv);
+                return {MakeError("Input data was not valid, must have positive size"sv), desc};
             }
 
             const auto& bytes = data;
@@ -355,7 +356,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
 
             if (desc.width == 0 || desc.height == 0)
             {
-                return MakeError("Input data contained zero sized axis"sv);
+                return {MakeError("Input data contained zero sized axis"sv), desc};
             }
 
             if (
@@ -364,7 +365,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
                 header_magic != QOI_MAGIC ||
                 desc.height >= QOI_PIXELS_MAX / desc.width
             ) {
-                return MakeError("Header data was not valid, size must be positive"sv);
+                return {MakeError("Header data was not valid, size must be positive"sv), desc};
             }
 
             if (channels == 0) {
@@ -430,7 +431,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
                 }
             }
 
-            return pixels;
+            return {pixels, desc};
         }
     };
 
@@ -547,8 +548,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
         if (!encoded.has_value()) {
             return 1;
         }
-        qoi::qoi_desc desc_out{};
-        const auto decoded = Q::decode(*encoded, desc_out, 3);
+        const auto [decoded, desc_out] = Q::decode(*encoded, 3);
         if (!decoded.has_value())
         {
             return 2;
@@ -576,8 +576,7 @@ QOI_IF_HAS_EXCEPTIONS(struct QoiException : std::runtime_error {}; )
             std::cout << "encode did not create valid value: " << encoded.error() << "\n";
         }
         std::cout << "Encoded size: " << (*encoded).size() << "\n";
-        qoi::qoi_desc desc_out{};
-        const auto decoded = Q::decode(*encoded, desc_out, 3);
+        const auto [decoded, desc_out] = Q::decode(*encoded, 3);
         if (!decoded.has_value())
         {
             std::cout << "Decode was unsuccessful: " << decoded.error() << "\n";
