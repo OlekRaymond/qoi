@@ -14,7 +14,7 @@ add_executable(constexpr_test
 if (CHECK)
     if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         target_compile_options(constexpr_test PRIVATE -Weverything
-                -Wno-c++98-compat
+            -Wno-c++98-compat
         )
     else()
         target_compile_options(constexpr_test PRIVATE -Wall -Wextra)
@@ -23,21 +23,12 @@ endif()
 set_target_properties(constexpr_test PROPERTIES CXX_STANDARD 20)
 target_link_libraries(constexpr_test PRIVATE qoi_cpp)
 
-add_library(qoi_c INTERFACE qoi.h)
+option(ENABLE_FUZZING "Build the fuzz testing application for qoi" OFF)
 
-option(build_conv "Build the qoi <> png converter" OFF)
-if (build_conv)
-    add_executable(qoi_conv qoiconv.c)
-    set_target_properties(qoi_conv PROPERTIES C_STANDARD 11)
-    target_link_libraries(qoi_conv PRIVATE qoi_c)
-endif()
-
-option(build_qoi_fuzz "Build the fuzz testing application for qoi" OFF)
-
-if (build_qoi_fuzz)
-    add_executable(qoi_fuzz qoifuzz.c)
+if (ENABLE_FUZZING)
+    add_executable(qoi_fuzz qoifuzz.cpp)
     target_compile_options(qoi_fuzz PRIVATE
-            "-fsanitize=address"
-            -lasan
+        "-fsanitize=address"
+        -lasan
     )
 endif()

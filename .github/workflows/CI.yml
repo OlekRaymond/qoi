@@ -1,0 +1,87 @@
+on:
+  - push
+  - pull_request
+  - workflow_dispatch
+
+jobs:
+  ReleaseBuilds:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        c-compiler: [gcc, clang]
+        include:
+          - c-compiler: gcc
+            cpp-compiler: g++
+          - c-compiler: clang
+            cpp-compiler: clang++
+          - c-compiler: cl
+            cpp-compiler: cl
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - &setup-dirs
+        name: Set reusable strings
+        shell: bash
+        # Turn repeated input strings (such as the build output directory) into step outputs.
+        id: strings
+        # absolute paths do not work on Windows runners so these are rarely used
+        #  (\ is not escaped so bad stuff happens)
+        run: |
+          echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
+          echo "install-dir=${{ github.workspace }}/installed" >> "$GITHUB_OUTPUT"
+          echo "cmake_args=-DCMAKE_CXX_COMPILER=${{ matrix.cpp-compiler }} -DCMAKE_C_COMPILER=${{ matrix.c-compiler }} " >> "$GITHUB_OUTPUT"
+
+      - &config
+        name: Configure CMake
+        run: >
+          cmake -B build
+          -S ${{ github.workspace }}
+          -DCMAKE_BUILD_TYPE=Release
+          ${{ steps.strings.outputs.cmake_args }}
+
+      - &build-code
+        name: Build
+        # Does (mostly) nothing, required for install step
+        run: cmake --build build --config Release
+
+      - &run-tests
+        name: Run Tests
+        id: run-tests
+        if: ${{steps.build-code.outcome == 'success'}}
+        working-directory: ${{ steps.strings.outputs.build-output-dir }}
+        # Execute tests. Note that --build-config is needed (see build)
+        run: |
+          ctest --build-config Release --output-on-failure
+
+  FuzzTest:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        c-compiler: [clang]
+        include:
+          - c-compiler: clang
+            cpp-compiler: clang++
+          - c-compiler: cl
+            cpp-compiler: cl
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    # Don't use all my minutes
+    #  Realistically 30 seconds should be enough
+    steps:
+      - uses: actions/checkout@v4
+      - *setup-dirs
+      - name: Configure CMake for Fuzzing
+        run: >
+          cmake -B build
+          -S ${{ github.workspace }}
+          -DCMAKE_BUILD_TYPE=Release
+          -DENABLE_FUZZING=ON
+          ${{ steps.strings.outputs.cmake_args }}
+      - *build-code
+      - name: Install FuzzTest executable
+        run: cmake --install build --prefix ${{ steps.strings.outputs.install-dir }}
+      - name: Run FuzzTest
+        working-directory: ${{ steps.strings.outputs.install-dir }}
+        run: ./bin/FuzzTest -max_total_time=600
