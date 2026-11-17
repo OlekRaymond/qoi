@@ -1,7 +1,6 @@
-#include "qoi.h"
+#include "qoi.hpp"
 #include <fuzzer/FuzzedDataProvider.h>
 #include <cstdint>
-#include <cstddef>
 #include <vector>
 #include <span>
 

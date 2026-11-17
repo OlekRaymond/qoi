@@ -279,7 +279,7 @@ public:
                 const size_t index_pos = QOI_COLOR_HASH(px) & (64 - 1);
 
                 if (index[index_pos] == px) {
-                    result[p++] = QOI_OP_INDEX | index_pos;
+                    result[p++] = QOI_OP_INDEX | static_cast<uint8_t>(index_pos);
                 }
                 else {
                     index[index_pos] = px;
@@ -297,15 +297,15 @@ public:
                             vg > -3 && vg < 2 &&
                             vb > -3 && vb < 2
                         ) {
-                            result[p++] = QOI_OP_DIFF | (vr + 2) << 4 | (vg + 2) << 2 | (vb + 2);
+                            result[p++] = static_cast<uint8_t>(QOI_OP_DIFF | (vr + 2) << 4 | (vg + 2) << 2 | (vb + 2));
                         }
                         else if (
                             vg_r >  -9 && vg_r <  8 &&
                             vg   > -33 && vg   < 32 &&
                             vg_b >  -9 && vg_b <  8
                         ) {
-                            result[p++] = QOI_OP_LUMA     | (vg   + 32);
-                            result[p++] = (vg_r + 8) << 4 | (vg_b +  8);
+                            result[p++] = static_cast<uint8_t>(QOI_OP_LUMA | (vg   + 32));
+                            result[p++] = static_cast<uint8_t>((vg_r + 8) << 4 | (vg_b +  8));
                         }
                         else {
                             result[p++] = QOI_OP_RGB;

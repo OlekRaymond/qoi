@@ -14,10 +14,12 @@ add_executable(constexpr_test
 if (CHECK)
     if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         target_compile_options(constexpr_test PRIVATE -Weverything
-            -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-padded
+            -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-c++20-compat -Wno-padded
             # Cannot do much about in a header only lib
             -Wno-weak-vtables -Wno-unused-macros
         )
+    elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        target_compile_options(constexpr_test PRIVATE /W4)
     else()
         target_compile_options(constexpr_test PRIVATE -Wall -Wextra)
     endif ()
@@ -29,8 +31,11 @@ option(ENABLE_FUZZING "Build the fuzz testing application for qoi" OFF)
 
 if (ENABLE_FUZZING)
     add_executable(qoi_fuzz qoifuzz.cpp)
-    target_compile_options(qoi_fuzz PRIVATE
-        "-fsanitize=address"
-        -lasan
-    )
+    set_target_properties(qoi_fuzz PROPERTIES CXX_STANDARD 23)
+    target_compile_options(qoi_fuzz PRIVATE -fsanitize=fuzzer)
+    target_link_options(qoi_fuzz PRIVATE -fsanitize=fuzzer)
+    target_compile_options(qoi_fuzz PRIVATE -fsanitize=undefined)
+    target_link_options(qoi_fuzz PRIVATE -fsanitize=undefined)
+    target_compile_options(qoi_fuzz PRIVATE -fsanitize=memory)
+    target_link_options(qoi_fuzz PRIVATE -fsanitize=memory)
 endif()
