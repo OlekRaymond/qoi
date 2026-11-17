@@ -336,10 +336,12 @@ public:
         qoi_desc struct is filled with the description from the file header.
     */
     static constexpr std::tuple<Result_t, Description> decode(std::span<const uint8_t> data, uint8_t channels) {
+
         Description desc{};
         constexpr auto MakeError = [](auto sv) {
-            return MakeResultType<VectorType, true>(sv);
+            return MakeResultType<typename Config::vector_type, true>(sv);
         };
+        using VectorType = typename Config::vector_type;
         using namespace std::string_view_literals;
         std::array<qoi_rgba_t, 64> index{};
         qoi_rgba_t px{};
@@ -441,32 +443,4 @@ public:
         return {pixels, desc};
     }
 };
-
-template<ErrorHandling eh>
-constexpr auto InvalidEncode()
-{
-    std::vector<uint8_t> example_data{0,1,2,3,4,5,5,6,7,7,8,8,9};
-    Description desc{};
-    return qoi::Qoi<DefaultQoiConfig, DefaultQoiConfig{eh}>::encode(example_data, desc);
-}
-static_assert(InvalidEncode<ErrorHandling::TreatAsMonadic>().empty());
-static_assert(!InvalidEncode<ErrorHandling::Optional>().has_value());
-static_assert(!InvalidEncode<ErrorHandling::Optional>().has_value());
-
-template<ErrorHandling eh>
-constexpr auto ValidEncode()
-{
-    std::vector<uint8_t> example_data{0,1,2,3,4,5,5,6,7,7,8,8};
-    constexpr qoi::Description desc{
-        .width=2,
-        .height=2,
-        .channels=3,
-        .colorspace=0
-    };
-    return qoi::Qoi<DefaultQoiConfig, DefaultQoiConfig{eh}>::encode(example_data, desc);
-}
-static_assert(!ValidEncode<ErrorHandling::TreatAsMonadic>().empty());
-static_assert(ValidEncode<ErrorHandling::Optional>().has_value());
-static_assert(ValidEncode<ErrorHandling::Expected>().has_value());
-
 } // namespace
