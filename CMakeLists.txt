@@ -20,7 +20,7 @@ if (CHECK)
         target_compile_options(constexpr_test PRIVATE -Wall -Wextra)
     endif ()
 endif()
-set_target_properties(constexpr_test PROPERTIES CXX_STANDARD 20)
+set_target_properties(constexpr_test PROPERTIES CXX_STANDARD 23)
 target_link_libraries(constexpr_test PRIVATE qoi_cpp)
 
 option(ENABLE_FUZZING "Build the fuzz testing application for qoi" OFF)
