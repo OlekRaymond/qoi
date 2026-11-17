@@ -158,7 +158,8 @@ how chunks are en-/decoded. */
         const uint8_t b1 = bytes[p++];
         const uint8_t b2 = bytes[p++];
         const uint8_t b3 = bytes[p++];
-        return b0 << 24 | b1 << 16 | b2 << 8 | b3;
+        const auto val = b0 << 24 | b1 << 16 | b2 << 8 | b3;
+        return std::bit_cast<uint32_t>(val);
     }
 
 enum struct ErrorHandling {

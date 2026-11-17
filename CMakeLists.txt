@@ -14,7 +14,9 @@ add_executable(constexpr_test
 if (CHECK)
     if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         target_compile_options(constexpr_test PRIVATE -Weverything
-            -Wno-c++98-compat
+            -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-padded
+            # Cannot do much about in a header only lib
+            -Wno-weak-vtables -Wno-unused-macros
         )
     else()
         target_compile_options(constexpr_test PRIVATE -Wall -Wextra)
