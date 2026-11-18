@@ -39,11 +39,11 @@ jobs:
           cmake -B build
           -S ${{ github.workspace }}
           -DCMAKE_BUILD_TYPE=Release
+          -DCHECK=ON
           ${{ steps.strings.outputs.cmake_args }}
 
       - &build-code
         name: Build
-        # Does (mostly) nothing, required for install step
         run: cmake --build build --config Release
 
       - &run-tests
@@ -68,7 +68,6 @@ jobs:
             os: windows-latest
     runs-on: ${{ matrix.os }}
     # Don't use all my minutes
-    #  Realistically 30 seconds should be enough
     steps:
       - uses: actions/checkout@v4
       - *setup-dirs
@@ -78,10 +77,11 @@ jobs:
           -S ${{ github.workspace }}
           -DCMAKE_BUILD_TYPE=Release
           -DENABLE_FUZZING=ON
+          -DCHECK=ON
           ${{ steps.strings.outputs.cmake_args }}
       - *build-code
-      - name: Install FuzzTest executable
+      - name: Install qoi_fuzz executable
         run: cmake --install build --prefix ${{ steps.strings.outputs.install-dir }}
-      - name: Run FuzzTest
+      - name: Run qoi_fuzz
         working-directory: ${{ steps.strings.outputs.install-dir }}
-        run: ./bin/FuzzTest -max_total_time=600
+        run: ./bin/qoi_fuzz -max_total_time=600
