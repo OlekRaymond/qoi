@@ -219,13 +219,19 @@ public:
         qoi_rgba_t px_prev{};
 
         if (
-            data.size() <= 1 ||
+            data.size() <= 3 ||
             desc.width == 0 || desc.height == 0 ||
             desc.channels < 3 || desc.channels > 4 ||
             desc.colorspace > 1 ||
             desc.height >= QOI_PIXELS_MAX / desc.width
         ) {
             return MakeError("Invalid input, qoi has 3|4 channels and a reasonable amount of pixels");
+        }
+
+        const auto expected_size = desc.width * desc.height * desc.channels;
+        if (data.size() != expected_size)
+        {
+            return MakeError("Invalid input, buffer did not contain enough pixels");
         }
 
         const size_t max_size = desc.width * desc.height * (desc.channels + 1) +
@@ -444,4 +450,4 @@ public:
         return {pixels, desc};
     }
 };
-} // namespace
+}
